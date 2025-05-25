@@ -1,74 +1,52 @@
 package main
 
 import (
-	"flag"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+
+	"example.com/sub-cmd-example/cmd"
 )
 
+var errInvalidSubCommand = errors.New("invalid sub-command specified")
+
 func printUsage(writer io.Writer) {
-	fmt.Fprintf(writer, "Usage: %s [cmd-a|cmd-b] -h", os.Args[0])
-	fmt.Fprintln(writer)
-	handleCmdA(writer, []string{"-h"})
-	handleCmdB(writer, []string{"-h"})
+	fmt.Fprintln(writer, "Usage: mync [http|grpc] -h")
+	cmd.HandleHttp(writer, []string{"-h"})
+	cmd.HandleGrpc(writer, []string{"-h"})
 }
 
-func handleCmdA(writer io.Writer, args []string) error {
-	var v string
+func handleCommand(writer io.Writer, args []string) error {
+	var err error
 
-	fs := flag.NewFlagSet("cmd-a", flag.ContinueOnError)
-	fs.SetOutput(writer)
-	fs.StringVar(&v, "verb", "argument-value", "Argument 1")
-
-	err := fs.Parse(args)
-	if err != nil {
-		return err
+	if len(args) < 1 {
+		err = errInvalidSubCommand
+	} else {
+		switch args[0] {
+		case "http":
+			err = cmd.HandleHttp(writer, args[1:])
+		case "grpc":
+			err = cmd.HandleGrpc(writer, args[1:])
+		case "-h":
+			printUsage(writer)
+		case "-help":
+			printUsage(writer)
+		default:
+			err = errInvalidSubCommand
+		}
 	}
 
-	fmt.Fprint(writer, "Executing command A")
-
-	return nil
-}
-
-func handleCmdB(writer io.Writer, args []string) error {
-	var v string
-
-	fs := flag.NewFlagSet("cmd-b", flag.ContinueOnError)
-	fs.SetOutput(writer)
-	fs.StringVar(&v, "verb", "argument-value", "Argument 1")
-
-	err := fs.Parse(args)
-	if err != nil {
-		return err
+	if errors.Is(err, cmd.ErrNoServerSpecified) || errors.Is(err, errInvalidSubCommand) {
+		fmt.Fprintln(writer, err)
+		printUsage(writer)
 	}
 
-	fmt.Fprint(writer, "Executing command B")
-
-	return nil
+	return err
 }
 
 func main() {
-	var err error
-
-	if len(os.Args) < 2 {
-		printUsage(os.Stdout)
-		os.Exit(1)
-	}
-
-	switch os.Args[1] {
-	case "cmd-a":
-		err = handleCmdA(os.Stdout, os.Args[2:])
-
-	case "cmd-b":
-		err = handleCmdB(os.Stdout, os.Args[2:])
-
-	default:
-		printUsage(os.Stdout)
-	}
-
-	if err != nil {
-		fmt.Println(err)
+	if err := handleCommand(os.Stdout, os.Args[1:]); err != nil {
 		os.Exit(1)
 	}
 }
