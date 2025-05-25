@@ -9,7 +9,7 @@ vet: fmt
 	go vet ./...
 
 test: vet
-	go test
+	go test -v ./...
 
 cover: test
 	go test -coverprofile=coverage.out
@@ -20,4 +20,4 @@ build: test
 
 clean:
 	go clean
-	rm ./application
+	rm ./application ./coverage.out ./coverage.html

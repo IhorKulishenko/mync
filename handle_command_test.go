@@ -2,8 +2,9 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"testing"
+
+	"example.com/sub-cmd-example/cmd"
 )
 
 func TestHandleCommand(t *testing.T) {
@@ -59,7 +60,7 @@ Options:
 		},
 		{
 			args: []string{"http"},
-			err:  errors.New("you have to specify the remote server"),
+			err:  cmd.ErrNoServerSpecified,
 		},
 		{
 			args:   []string{"http", "remote.server"},
@@ -68,7 +69,7 @@ Options:
 		},
 		{
 			args: []string{"grpc"},
-			err:  errors.New("you have to specify the remote server"),
+			err:  cmd.ErrNoServerSpecified,
 		},
 		{
 			args:   []string{"grpc", "remote.server"},
