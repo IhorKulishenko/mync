@@ -11,12 +11,23 @@ type httpConfig struct {
 	verb string
 }
 
+func validate(method string) error {
+	allowedMethods := []string{"GET", "POST", "HEAD"}
+	for _, a := range allowedMethods {
+		if method == a {
+			return nil
+		}
+	}
+
+	return ErrInvalidHttpMethod
+}
+
 func HandleHttp(writer io.Writer, args []string) error {
-	var v string
+	var verb string
 
 	fs := flag.NewFlagSet("http", flag.ContinueOnError)
 	fs.SetOutput(writer)
-	fs.StringVar(&v, "verb", "GET", "HTTP method")
+	fs.StringVar(&verb, "verb", "GET", "HTTP method")
 	fs.Usage = func() {
 		var usageString = `
 http: A HTTP client.
@@ -36,7 +47,11 @@ http: <options> server`
 		return ErrNoServerSpecified
 	}
 
-	c := httpConfig{verb: v}
+	if err := validate(verb); err != nil {
+		return err
+	}
+
+	c := httpConfig{verb: verb}
 	c.url = fs.Arg(0)
 	fmt.Fprintln(writer, "Executing http command")
 

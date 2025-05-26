@@ -37,9 +37,11 @@ func handleCommand(writer io.Writer, args []string) error {
 		}
 	}
 
-	if errors.Is(err, cmd.ErrNoServerSpecified) || errors.Is(err, errInvalidSubCommand) {
-		fmt.Fprintln(writer, err)
-		printUsage(writer)
+	for _, e := range []error{cmd.ErrNoServerSpecified, errInvalidSubCommand, cmd.ErrInvalidHttpMethod} {
+		if errors.Is(err, e) {
+			fmt.Fprintln(writer, err)
+			printUsage(writer)
+		}
 	}
 
 	return err

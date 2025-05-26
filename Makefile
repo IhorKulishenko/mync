@@ -12,7 +12,7 @@ test: vet
 	go test -v ./...
 
 cover: test
-	go test -coverprofile=coverage.out
+	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 build: test

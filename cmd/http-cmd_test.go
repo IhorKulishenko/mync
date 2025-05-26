@@ -35,6 +35,15 @@ Options:
 			err:    nil,
 			output: "Executing http command\n",
 		},
+		{
+			args:   []string{"-verb", "GET", "http://localhost"},
+			err:    nil,
+			output: "Executing http command\n",
+		},
+		{
+			args: []string{"-verb", "PUT", "http://localhost"},
+			err:  ErrInvalidHttpMethod,
+		},
 	}
 
 	byteBuf := new(bytes.Buffer)
