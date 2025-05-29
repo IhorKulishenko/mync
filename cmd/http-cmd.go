@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"slices"
+	"strings"
 )
 
 type httpConfig struct {
@@ -13,10 +16,8 @@ type httpConfig struct {
 
 func validate(method string) error {
 	allowedMethods := []string{"GET", "POST", "HEAD"}
-	for _, a := range allowedMethods {
-		if method == a {
-			return nil
-		}
+	if slices.Contains(allowedMethods, strings.ToUpper(method)) {
+		return nil
 	}
 
 	return ErrInvalidHttpMethod
@@ -51,9 +52,35 @@ http: <options> server`
 		return err
 	}
 
-	c := httpConfig{verb: verb}
+	c := httpConfig{verb: strings.ToUpper(verb)}
 	c.url = fs.Arg(0)
-	fmt.Fprintln(writer, "Executing http command")
+
+	return processVerb(writer, c)
+}
+
+func processVerb(writer io.Writer, cfg httpConfig) error {
+	switch cfg.verb {
+	case "GET":
+		var data []byte
+		var err error
+		if data, err = getRemoteResource(cfg.url); err != nil {
+			return err
+		}
+		fmt.Fprint(writer, string(data))
+	default:
+		panic("not immplemented")
+	}
 
 	return nil
+}
+
+func getRemoteResource(url string) ([]byte, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
 }

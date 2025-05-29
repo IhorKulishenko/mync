@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"example.com/sub-cmd-example/cmd"
+	testutils "example.com/sub-cmd-example/test_utils"
 )
 
 func TestHandleCommand(t *testing.T) {
@@ -27,6 +28,10 @@ Options:
   -method string
     	Method to call
 `
+
+	expectedResponse := "testing"
+	ts := testutils.StartTestHttpServer(expectedResponse)
+	defer ts.Close()
 
 	testConfigs := []struct {
 		args   []string
@@ -63,9 +68,9 @@ Options:
 			err:  cmd.ErrNoServerSpecified,
 		},
 		{
-			args:   []string{"http", "remote.server"},
+			args:   []string{"http", ts.URL},
 			err:    nil,
-			output: "Executing http command\n",
+			output: expectedResponse,
 		},
 		{
 			args: []string{"grpc"},
@@ -79,21 +84,21 @@ Options:
 	}
 
 	byteBuf := new(bytes.Buffer)
-	for _, tc := range testConfigs {
+	for index, tc := range testConfigs {
 		err := handleCommand(byteBuf, tc.args)
 
 		if tc.err == nil && err != nil {
-			t.Fatalf("Expected nil error, got: %v", err)
+			t.Fatalf("T%d: Expected nil error, got: %v", index, err)
 		}
 
 		if tc.err != nil && tc.err.Error() != err.Error() {
-			t.Fatalf("Expected error %v, got: %v", tc.err, err)
+			t.Fatalf("T%d: Expected error %v, got: %v", index, tc.err, err)
 		}
 
 		if len(tc.output) != 0 {
 			gotOutput := byteBuf.String()
 			if tc.output != gotOutput {
-				t.Errorf("Expected output to be: %#v, got: %#v", tc.output, gotOutput)
+				t.Errorf("T%d: Expected output to be: %#v, got: %#v", index, tc.output, gotOutput)
 			}
 		}
 

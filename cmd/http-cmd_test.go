@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+
+	testutils "example.com/sub-cmd-example/test_utils"
 )
 
 func TestHandleHttp(t *testing.T) {
@@ -15,6 +17,9 @@ Options:
   -verb string
     	HTTP method (default "GET")
 `
+	expectedResponse := "test response"
+	ts := testutils.StartTestHttpServer(expectedResponse)
+	defer ts.Close()
 
 	testConfigs := []struct {
 		args   []string
@@ -31,37 +36,37 @@ Options:
 			output: usageMessage,
 		},
 		{
-			args:   []string{"http://localhost"},
+			args:   []string{ts.URL},
 			err:    nil,
-			output: "Executing http command\n",
+			output: expectedResponse,
 		},
 		{
-			args:   []string{"-verb", "GET", "http://localhost"},
+			args:   []string{"-verb", "GET", ts.URL},
 			err:    nil,
-			output: "Executing http command\n",
+			output: expectedResponse,
 		},
 		{
-			args: []string{"-verb", "PUT", "http://localhost"},
+			args: []string{"-verb", "PUT", ts.URL},
 			err:  ErrInvalidHttpMethod,
 		},
 	}
 
 	byteBuf := new(bytes.Buffer)
-	for _, tc := range testConfigs {
+	for index, tc := range testConfigs {
 		err := HandleHttp(byteBuf, tc.args)
 
 		if tc.err == nil && err != nil {
-			t.Fatalf("Expected nil error, got %v", err)
+			t.Fatalf("T%d: Expected nil error, got %v", index, err)
 		}
 
 		if tc.err != nil && err != nil && tc.err.Error() != err.Error() {
-			t.Fatalf("Expected error %v, got error: %v", tc.err, err)
+			t.Fatalf("T%d: Expected error %v, got error: %v", index, tc.err, err)
 		}
 
 		if len(tc.output) != 0 {
 			gotOutput := byteBuf.String()
 			if tc.output != gotOutput {
-				t.Errorf("Expected output %#v, got: %#v", tc.output, gotOutput)
+				t.Errorf("T%d: Expected output %#v, got: %#v", index, tc.output, gotOutput)
 			}
 		}
 
