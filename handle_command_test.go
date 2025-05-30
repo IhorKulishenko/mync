@@ -16,6 +16,8 @@ http: A HTTP client.
 http: <options> server
 
 Options:
+  -output string
+    	output file name
   -verb string
     	HTTP method (default "GET")
 
