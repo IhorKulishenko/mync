@@ -11,9 +11,10 @@ import (
 )
 
 type httpConfig struct {
-	url    string
-	verb   string
-	output string
+	url      string
+	verb     string
+	output   string
+	postBody string
 }
 
 type argKeys struct {
@@ -30,8 +31,12 @@ func validate(keys argKeys) error {
 		return ErrInvalidHttpMethod
 	}
 
-	if argKeys.verb != "POST" && (argKeys.wasSet["body"] || argKeys.wasSet["body-file"]) {
-		
+	if keys.verb != "POST" && (keys.wasSet["body"] || keys.wasSet["body-file"]) {
+		return ErrInvalidHttpUsage
+	}
+
+	if keys.wasSet["body"] && keys.wasSet["body-file"] {
+		return ErrInvalidHttpUsage
 	}
 
 	return nil
@@ -76,12 +81,32 @@ http: <options> server`
 	}
 
 	c := httpConfig{
-		verb:   strings.ToUpper(keys.verb),
-		url:    fs.Arg(0),
-		output: keys.outputFile,
+		verb:     strings.ToUpper(keys.verb),
+		url:      fs.Arg(0),
+		output:   keys.outputFile,
+		postBody: getJsonBody(keys.body, keys.bodyFile),
 	}
 
 	return processVerb(writer, c)
+}
+
+func getJsonBody(fromString string, fromFile string) string {
+	if len(fromFile) > 0 {
+		fd, err := os.Open(fromFile)
+		if err != nil {
+			return ""
+		}
+		defer fd.Close()
+
+		buffer, err := io.ReadAll(fd)
+		if err != nil {
+			return ""
+		}
+
+		return string(buffer)
+	}
+
+	return fromString
 }
 
 func processVerb(writer io.Writer, cfg httpConfig) error {
@@ -94,6 +119,8 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 		if err != nil {
 			return err
 		}
+	case "POST":
+		postToRemoteSource(cfg.url, cfg.postBody)
 
 	default:
 		panic("not immplemented")
@@ -120,6 +147,17 @@ func getRemoteResource(url string) ([]byte, error) {
 		return nil, err
 	}
 
+	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
+}
+
+func postToRemoteSource(url string, json string) ([]byte, error) {
+
+	resp, err := http.Post(url, "application/json", strings.NewReader(json))
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 
 	return io.ReadAll(resp.Body)
