@@ -16,23 +16,37 @@ type httpConfig struct {
 	output string
 }
 
-func validate(method string) error {
+type argKeys struct {
+	verb       string
+	outputFile string
+	body       string
+	bodyFile   string
+	wasSet     map[string]bool
+}
+
+func validate(keys argKeys) error {
 	allowedMethods := []string{"GET", "POST", "HEAD"}
-	if slices.Contains(allowedMethods, strings.ToUpper(method)) {
-		return nil
+	if !slices.Contains(allowedMethods, strings.ToUpper(keys.verb)) {
+		return ErrInvalidHttpMethod
 	}
 
-	return ErrInvalidHttpMethod
+	if argKeys.verb != "POST" && (argKeys.wasSet["body"] || argKeys.wasSet["body-file"]) {
+		
+	}
+
+	return nil
 }
 
 func HandleHttp(writer io.Writer, args []string) error {
-	var verb string
-	var outputFile string
+	keys := argKeys{}
 
 	fs := flag.NewFlagSet("http", flag.ContinueOnError)
 	fs.SetOutput(writer)
-	fs.StringVar(&verb, "verb", "GET", "HTTP method")
-	fs.StringVar(&outputFile, "output", "", "output file name")
+	fs.StringVar(&keys.verb, "verb", "GET", "HTTP method")
+	fs.StringVar(&keys.outputFile, "output", "", "output file name")
+	fs.StringVar(&keys.body, "body", "", "POST body")
+	fs.StringVar(&keys.bodyFile, "body-file", "", "POST body in file")
+
 	fs.Usage = func() {
 		var usageString = `
 http: A HTTP client.
@@ -52,14 +66,19 @@ http: <options> server`
 		return ErrNoServerSpecified
 	}
 
-	if err := validate(verb); err != nil {
+	keys.wasSet = make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) {
+		keys.wasSet[f.Name] = true
+	})
+
+	if err := validate(keys); err != nil {
 		return err
 	}
 
 	c := httpConfig{
-		verb:   strings.ToUpper(verb),
+		verb:   strings.ToUpper(keys.verb),
 		url:    fs.Arg(0),
-		output: outputFile,
+		output: keys.outputFile,
 	}
 
 	return processVerb(writer, c)
