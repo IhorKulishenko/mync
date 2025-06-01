@@ -31,7 +31,7 @@ func validate(keys argKeys) error {
 		return ErrInvalidHttpMethod
 	}
 
-	if keys.verb != "POST" && (keys.wasSet["body"] || keys.wasSet["body-file"]) {
+	if strings.ToUpper(keys.verb) != "POST" && (keys.wasSet["body"] || keys.wasSet["body-file"]) {
 		return ErrInvalidHttpUsage
 	}
 
@@ -120,7 +120,11 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 			return err
 		}
 	case "POST":
-		postToRemoteSource(cfg.url, cfg.postBody)
+		resp, err := postToRemoteSource(cfg.url, cfg.postBody)
+		if err != nil {
+			return err
+		}
+		data = resp
 
 	default:
 		panic("not immplemented")

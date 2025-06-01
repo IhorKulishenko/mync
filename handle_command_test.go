@@ -16,6 +16,10 @@ http: A HTTP client.
 http: <options> server
 
 Options:
+  -body string
+    	POST body
+  -body-file string
+    	POST body in file
   -output string
     	output file name
   -verb string

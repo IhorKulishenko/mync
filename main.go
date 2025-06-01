@@ -49,6 +49,7 @@ func handleCommand(writer io.Writer, args []string) error {
 
 func main() {
 	if err := handleCommand(os.Stdout, os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err.Error())
 		os.Exit(1)
 	}
 }

@@ -1,3 +1,9 @@
 application
 *.html
 *.out
+*.json
+*.log
+*.txt
+*.xml
+*.yaml
+*.yml

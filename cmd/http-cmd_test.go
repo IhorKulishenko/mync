@@ -15,6 +15,10 @@ http: A HTTP client.
 http: <options> server
 
 Options:
+  -body string
+    	POST body
+  -body-file string
+    	POST body in file
   -output string
     	output file name
   -verb string
@@ -82,7 +86,7 @@ Options:
 	}
 }
 
-func TestProcessVerb(t *testing.T) {
+func TestProcessGetVerb(t *testing.T) {
 	expectedResponse := "test response"
 	ts := testutils.StartTestHttpServer(expectedResponse)
 	defer ts.Close()
@@ -152,5 +156,64 @@ func TestProcessVerb(t *testing.T) {
 		}
 
 		buffer.Reset()
+	}
+}
+
+func TestProcessPostVerb(t *testing.T) {
+	ts := testutils.StartExtendedTestHttpServer()
+	defer ts.Close()
+
+	testConfigs := []struct {
+		name   string
+		cfg    httpConfig
+		err    error
+		output string
+	}{
+		{
+			name: "",
+			cfg: httpConfig{
+				url:      ts.URL,
+				verb:     "POST",
+				postBody: `{"value":"test value 1"}`,
+			},
+			output: "method: POST\nbody: \"{\\\"value\\\":\\\"test value 1\\\"}\"\n",
+		},
+	}
+
+	bufferWriter := new(bytes.Buffer)
+	for index, tc := range testConfigs {
+		err := processVerb(bufferWriter, tc.cfg)
+
+		if tc.err == nil && err != nil {
+			t.Fatalf("T%d: Expected non error, got: %v\n", index, err)
+		}
+
+		if tc.err != nil && err == nil {
+			t.Fatalf("T%d: Expected error %v, got no error\n", index, tc.err)
+		}
+
+		if tc.err != err {
+			t.Fatalf("T%d: Expected error %v, got error %v\n", index, tc.err, err)
+		}
+
+		actualResponse := bufferWriter.String()
+		if tc.output != actualResponse {
+			t.Fatalf("T%d: Expected output %#v, got %#v\n", index, tc.output, actualResponse)
+		}
+
+		bufferWriter.Reset()
+	}
+
+	///
+	jsonFile := t.TempDir() + "file.json"
+
+	expectedResponse := "method: POST\nbody: \"{\\\"value\\\": \\\"some value from file\\\"}\"\n"
+	os.WriteFile(jsonFile, []byte("{\"value\": \"some value from file\"}"), 0644)
+
+	HandleHttp(bufferWriter, []string{"-verb", "post", "-body-file", jsonFile, ts.URL})
+	actualResponse := bufferWriter.String()
+
+	if expectedResponse != actualResponse {
+		t.Fatalf("Expected %#v, got: %#v\n", expectedResponse, actualResponse)
 	}
 }
