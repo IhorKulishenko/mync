@@ -20,8 +20,12 @@ Options:
     	POST body
   -body-file string
     	POST body in file
+  -form-data value
+    	POST multipart form data (key=value)
   -output string
     	output file name
+  -upload string
+    	POST multipart form file upload
   -verb string
     	HTTP method (default "GET")
 

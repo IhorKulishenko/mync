@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"slices"
@@ -15,6 +17,8 @@ type httpConfig struct {
 	verb     string
 	output   string
 	postBody string
+	formData map[string]string
+	mpfile   string
 }
 
 type argKeys struct {
@@ -22,6 +26,8 @@ type argKeys struct {
 	outputFile string
 	body       string
 	bodyFile   string
+	uploadFile string
+	formData   formDataArg
 	wasSet     map[string]bool
 }
 
@@ -43,7 +49,7 @@ func validate(keys argKeys) error {
 }
 
 func HandleHttp(writer io.Writer, args []string) error {
-	keys := argKeys{}
+	keys := argKeys{formData: make(formDataArg)}
 
 	fs := flag.NewFlagSet("http", flag.ContinueOnError)
 	fs.SetOutput(writer)
@@ -51,7 +57,8 @@ func HandleHttp(writer io.Writer, args []string) error {
 	fs.StringVar(&keys.outputFile, "output", "", "output file name")
 	fs.StringVar(&keys.body, "body", "", "POST body")
 	fs.StringVar(&keys.bodyFile, "body-file", "", "POST body in file")
-
+	fs.StringVar(&keys.uploadFile, "upload", "", "POST multipart form file upload")
+	fs.Var(&keys.formData, "form-data", "POST multipart form data (key=value)")
 	fs.Usage = func() {
 		var usageString = `
 http: A HTTP client.
@@ -85,6 +92,8 @@ http: <options> server`
 		url:      fs.Arg(0),
 		output:   keys.outputFile,
 		postBody: getJsonBody(keys.body, keys.bodyFile),
+		formData: keys.formData,
+		mpfile:   keys.uploadFile,
 	}
 
 	return processVerb(writer, c)
@@ -120,7 +129,14 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 			return err
 		}
 	case "POST":
-		resp, err := postToRemoteSource(cfg.url, cfg.postBody)
+		var resp []byte
+		var err error
+		if len(cfg.formData) > 0 || len(cfg.mpfile) > 0 {
+			resp, err = postMultiPartToRemoteSource(cfg.url, cfg.formData, cfg.mpfile)
+		} else {
+			resp, err = postBodyToRemoteSource(cfg.url, cfg.postBody)
+		}
+
 		if err != nil {
 			return err
 		}
@@ -156,13 +172,63 @@ func getRemoteResource(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func postToRemoteSource(url string, json string) ([]byte, error) {
+func postBodyToRemoteSource(url string, json string) ([]byte, error) {
 
 	resp, err := http.Post(url, "application/json", strings.NewReader(json))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
+}
+
+func postMultiPartToRemoteSource(url string, formData map[string]string, filename string) ([]byte, error) {
+	var buffer = new(bytes.Buffer)
+
+	mwriter := multipart.NewWriter(buffer)
+
+	errResponse := func(err error) ([]byte, error) {
+		return []byte{}, err
+	}
+
+	for k, v := range formData {
+		fw, err := mwriter.CreateFormField(k)
+		if err != nil {
+			return errResponse(err)
+		}
+		fmt.Fprint(fw, v)
+	}
+
+	if len(filename) > 0 {
+		fw, err := mwriter.CreateFormFile("file", filename)
+		if err != nil {
+			return errResponse(err)
+		}
+
+		freader, err := os.Open(filename)
+		if err != nil {
+			return errResponse(err)
+		}
+
+		defer freader.Close()
+		_, err = io.Copy(fw, freader)
+		if err != nil {
+			return errResponse(err)
+		}
+	}
+
+	err := mwriter.Close()
+	if err != nil {
+		return errResponse(err)
+	}
+
+	contentType := mwriter.FormDataContentType()
+
+	resp, err := http.Post(url, contentType, buffer)
+	if err != nil {
+		return errResponse(err)
+	}
 
 	return io.ReadAll(resp.Body)
 }

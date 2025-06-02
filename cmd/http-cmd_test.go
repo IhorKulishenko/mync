@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	testutils "example.com/sub-cmd-example/test_utils"
@@ -19,8 +20,12 @@ Options:
     	POST body
   -body-file string
     	POST body in file
+  -form-data value
+    	POST multipart form data (key=value)
   -output string
     	output file name
+  -upload string
+    	POST multipart form file upload
   -verb string
     	HTTP method (default "GET")
 `
@@ -205,7 +210,7 @@ func TestProcessPostVerb(t *testing.T) {
 	}
 
 	///
-	jsonFile := t.TempDir() + "file.json"
+	jsonFile := filepath.Join(t.TempDir(), "file.json")
 
 	expectedResponse := "method: POST\nbody: \"{\\\"value\\\": \\\"some value from file\\\"}\"\n"
 	os.WriteFile(jsonFile, []byte("{\"value\": \"some value from file\"}"), 0644)
@@ -216,4 +221,26 @@ func TestProcessPostVerb(t *testing.T) {
 	if expectedResponse != actualResponse {
 		t.Fatalf("Expected %#v, got: %#v\n", expectedResponse, actualResponse)
 	}
+}
+
+func TestPostMultipartVerb(t *testing.T) {
+	ts := testutils.StartExtendedTestHttpServer()
+	defer ts.Close()
+
+	jsonFile := filepath.Join(t.TempDir(), "file.json")
+	os.WriteFile(jsonFile, []byte("{\"value\": \"some value from file\"}"), 0644)
+
+	bufferWriter := new(bytes.Buffer)
+	err := HandleHttp(bufferWriter, []string{"-verb", "post", "-form-data", "key1=value1", "-form-data", "key2=value2", "-upload", jsonFile, ts.URL})
+	if err != nil {
+		t.Fatalf("got error %v", err)
+	}
+
+	actualResponse := bufferWriter.String()
+	expectedResponse := "value: key1=value1;key2=value2\nfiles: file=file.json;\n"
+
+	if expectedResponse != actualResponse {
+		t.Fatalf("Expected: %#v, got: %#v", expectedResponse, actualResponse)
+	}
+
 }
