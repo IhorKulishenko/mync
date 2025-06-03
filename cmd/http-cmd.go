@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,22 +14,24 @@ import (
 )
 
 type httpConfig struct {
-	url      string
-	verb     string
-	output   string
-	postBody string
-	formData map[string]string
-	mpfile   string
+	disableRedirect bool
+	url             string
+	verb            string
+	output          string
+	postBody        string
+	formData        map[string]string
+	mpfile          string
 }
 
 type argKeys struct {
-	verb       string
-	outputFile string
-	body       string
-	bodyFile   string
-	uploadFile string
-	formData   formDataArg
-	wasSet     map[string]bool
+	body            string
+	bodyFile        string
+	disableRedirect bool
+	formData        formDataArg
+	outputFile      string
+	uploadFile      string
+	verb            string
+	wasSet          map[string]bool
 }
 
 func validate(keys argKeys) error {
@@ -59,6 +62,7 @@ func HandleHttp(writer io.Writer, args []string) error {
 	fs.StringVar(&keys.bodyFile, "body-file", "", "POST body in file")
 	fs.StringVar(&keys.uploadFile, "upload", "", "POST multipart form file upload")
 	fs.Var(&keys.formData, "form-data", "POST multipart form data (key=value)")
+	fs.BoolVar(&keys.disableRedirect, "disable-redirect", false, "GET disable redirect")
 	fs.Usage = func() {
 		var usageString = `
 http: A HTTP client.
@@ -87,16 +91,17 @@ http: <options> server`
 		return err
 	}
 
-	c := httpConfig{
-		verb:     strings.ToUpper(keys.verb),
-		url:      fs.Arg(0),
-		output:   keys.outputFile,
-		postBody: getJsonBody(keys.body, keys.bodyFile),
-		formData: keys.formData,
-		mpfile:   keys.uploadFile,
+	cfg := httpConfig{
+		verb:            strings.ToUpper(keys.verb),
+		url:             fs.Arg(0),
+		output:          keys.outputFile,
+		postBody:        getJsonBody(keys.body, keys.bodyFile),
+		formData:        keys.formData,
+		mpfile:          keys.uploadFile,
+		disableRedirect: keys.disableRedirect,
 	}
 
-	return processVerb(writer, c)
+	return processVerb(writer, cfg)
 }
 
 func getJsonBody(fromString string, fromFile string) string {
@@ -122,11 +127,11 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 	var data []byte
 	var err error
 
-	client := http.Client{}
+	client := getHttpClient(cfg)
 
 	switch cfg.verb {
 	case "GET":
-		data, err = getRemoteResource(&client, &cfg)
+		data, err = getRemoteResource(client, &cfg)
 		if err != nil {
 			return err
 		}
@@ -163,6 +168,21 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 	return nil
 }
 
+func getHttpClient(cfg httpConfig) *http.Client {
+	if cfg.disableRedirect {
+		return &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) > 0 {
+					return errors.New("no redirects allowed")
+				}
+
+				return nil
+			}}
+	}
+
+	return http.DefaultClient
+}
+
 func getRemoteResource(client *http.Client, cfg *httpConfig) ([]byte, error) {
 	resp, err := client.Get(cfg.url)
 	if err != nil {
@@ -178,8 +198,8 @@ func postBodyToRemoteSource(cfg *httpConfig) ([]byte, error) {
 
 	resp, err := http.Post(cfg.url, "application/json",
 		strings.NewReader(cfg.postBody))
-	
-		if err != nil {
+
+	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()

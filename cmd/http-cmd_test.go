@@ -20,6 +20,8 @@ Options:
     	POST body
   -body-file string
     	POST body in file
+  -disable-redirect
+    	GET disable redirect
   -form-data value
     	POST multipart form data (key=value)
   -output string
