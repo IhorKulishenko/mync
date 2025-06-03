@@ -16,6 +16,7 @@ import (
 )
 
 type httpConfig struct {
+	basicAuth       basicAuth
 	disableRedirect bool
 	url             string
 	verb            string
@@ -27,6 +28,7 @@ type httpConfig struct {
 }
 
 type argKeys struct {
+	basicAuth       basicAuth
 	body            string
 	bodyFile        string
 	disableRedirect bool
@@ -75,6 +77,7 @@ func HandleHttp(writer io.Writer, args []string) error {
 		mpfile:          keys.uploadFile,
 		disableRedirect: keys.disableRedirect,
 		headers:         keys.headers,
+		basicAuth:       keys.basicAuth,
 	}
 
 	client := getHttpClient(cfg)
@@ -130,6 +133,7 @@ func parseKeys(writer io.Writer, args []string) (argKeys, error) {
 	fs.Var(&keys.formData, "form-data", "POST multipart form data (key=value)")
 	fs.BoolVar(&keys.disableRedirect, "disable-redirect", false, "GET disable redirect")
 	fs.Var(&keys.headers, "header", "custom header (key=value)")
+	fs.Var(&keys.basicAuth, "basicauth", "to use basic auth in form user:pass")
 
 	fs.Usage = func() {
 		var usageString = `
@@ -186,6 +190,10 @@ func getRequest(ctx context.Context, cfg httpConfig) (*http.Request, error) {
 
 	for hName, hValue := range cfg.headers {
 		req.Header.Add(hName, hValue)
+	}
+
+	if len(cfg.basicAuth.user) > 0 {
+		req.SetBasicAuth(cfg.basicAuth.user, cfg.basicAuth.password)
 	}
 
 	return req, err
