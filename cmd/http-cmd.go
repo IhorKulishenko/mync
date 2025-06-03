@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -29,6 +30,7 @@ type argKeys struct {
 	disableRedirect bool
 	formData        formDataArg
 	outputFile      string
+	url             string
 	uploadFile      string
 	verb            string
 	wasSet          map[string]bool
@@ -52,6 +54,59 @@ func validate(keys argKeys) error {
 }
 
 func HandleHttp(writer io.Writer, args []string) error {
+	keys, err := parseKeys(writer, args)
+	if err != nil {
+		return err
+	}
+
+	if err := validate(keys); err != nil {
+		return err
+	}
+
+	cfg := httpConfig{
+		verb:            strings.ToUpper(keys.verb),
+		url:             keys.url,
+		output:          keys.outputFile,
+		postBody:        getJsonBody(keys.body, keys.bodyFile),
+		formData:        keys.formData,
+		mpfile:          keys.uploadFile,
+		disableRedirect: keys.disableRedirect,
+	}
+
+	client := getHttpClient(cfg)
+	request, err := getRequest(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+
+	err = processResponse(writer, cfg, resp)
+
+	return err
+}
+
+func processResponse(writer io.Writer, cfg httpConfig, resp *http.Response) error {
+	if len(cfg.output) > 0 {
+		file, err := os.OpenFile(cfg.output, os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		writer = file
+	}
+
+	defer resp.Body.Close()
+
+	_, err := io.Copy(writer, resp.Body)
+	return err
+}
+
+func parseKeys(writer io.Writer, args []string) (argKeys, error) {
 	keys := argKeys{formData: make(formDataArg)}
 
 	fs := flag.NewFlagSet("http", flag.ContinueOnError)
@@ -75,11 +130,11 @@ http: <options> server`
 	}
 
 	if err := fs.Parse(args); err != nil {
-		return err
+		return argKeys{}, err
 	}
 
 	if fs.NArg() != 1 {
-		return ErrNoServerSpecified
+		return argKeys{}, ErrNoServerSpecified
 	}
 
 	keys.wasSet = make(map[string]bool)
@@ -87,85 +142,9 @@ http: <options> server`
 		keys.wasSet[f.Name] = true
 	})
 
-	if err := validate(keys); err != nil {
-		return err
-	}
+	keys.url = fs.Arg(0)
 
-	cfg := httpConfig{
-		verb:            strings.ToUpper(keys.verb),
-		url:             fs.Arg(0),
-		output:          keys.outputFile,
-		postBody:        getJsonBody(keys.body, keys.bodyFile),
-		formData:        keys.formData,
-		mpfile:          keys.uploadFile,
-		disableRedirect: keys.disableRedirect,
-	}
-
-	return processVerb(writer, cfg)
-}
-
-func getJsonBody(fromString string, fromFile string) string {
-	if len(fromFile) > 0 {
-		fd, err := os.Open(fromFile)
-		if err != nil {
-			return ""
-		}
-		defer fd.Close()
-
-		buffer, err := io.ReadAll(fd)
-		if err != nil {
-			return ""
-		}
-
-		return string(buffer)
-	}
-
-	return fromString
-}
-
-func processVerb(writer io.Writer, cfg httpConfig) error {
-	var data []byte
-	var err error
-
-	client := getHttpClient(cfg)
-
-	switch cfg.verb {
-	case "GET":
-		data, err = getRemoteResource(client, &cfg)
-		if err != nil {
-			return err
-		}
-	case "POST":
-		var resp []byte
-		var err error
-		if len(cfg.formData) > 0 || len(cfg.mpfile) > 0 {
-			resp, err = postMultiPartToRemoteSource(&cfg)
-		} else {
-			resp, err = postBodyToRemoteSource(&cfg)
-		}
-
-		if err != nil {
-			return err
-		}
-		data = resp
-
-	default:
-		panic("not immplemented")
-	}
-
-	if len(cfg.output) > 0 {
-		file, err := os.OpenFile(cfg.output, os.O_WRONLY|os.O_CREATE, 0644)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		writer = file
-	}
-
-	fmt.Fprint(writer, string(data))
-
-	return nil
+	return keys, nil
 }
 
 func getHttpClient(cfg httpConfig) *http.Client {
@@ -183,37 +162,42 @@ func getHttpClient(cfg httpConfig) *http.Client {
 	return http.DefaultClient
 }
 
-func getRemoteResource(client *http.Client, cfg *httpConfig) ([]byte, error) {
-	resp, err := client.Get(cfg.url)
+func getRequest(ctx context.Context, cfg httpConfig) (*http.Request, error) {
+	contentType, content, err := getRequestBody(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	req, err := http.NewRequestWithContext(ctx, cfg.verb, cfg.url, content)
+	req.Header.Add("Content-Type", contentType)
 
-	return io.ReadAll(resp.Body)
+	return req, err
 }
 
-func postBodyToRemoteSource(cfg *httpConfig) ([]byte, error) {
-
-	resp, err := http.Post(cfg.url, "application/json",
-		strings.NewReader(cfg.postBody))
-
-	if err != nil {
-		return nil, err
+func getRequestBody(cfg httpConfig) (string, io.Reader, error) {
+	if cfg.verb == http.MethodGet {
+		return "plain/text", nil, nil
 	}
-	defer resp.Body.Close()
 
-	return io.ReadAll(resp.Body)
+	if cfg.verb == http.MethodPost {
+		if len(cfg.formData) > 0 || len(cfg.mpfile) > 0 {
+			contentType, buffer, err := getMultipartBody(&cfg)
+			return contentType, buffer, err
+		} else {
+			return "application/json", strings.NewReader(cfg.postBody), nil
+		}
+	}
+
+	return "", nil, errors.New("unsupported method")
 }
 
-func postMultiPartToRemoteSource(cfg *httpConfig) ([]byte, error) {
+func getMultipartBody(cfg *httpConfig) (string, io.Reader, error) {
 	var buffer = new(bytes.Buffer)
 
 	mwriter := multipart.NewWriter(buffer)
 
-	errResponse := func(err error) ([]byte, error) {
-		return []byte{}, err
+	errResponse := func(err error) (string, io.Reader, error) {
+		return "", nil, err
 	}
 
 	for k, v := range cfg.formData {
@@ -249,10 +233,24 @@ func postMultiPartToRemoteSource(cfg *httpConfig) ([]byte, error) {
 
 	contentType := mwriter.FormDataContentType()
 
-	resp, err := http.Post(cfg.url, contentType, buffer)
-	if err != nil {
-		return errResponse(err)
+	return contentType, buffer, nil
+}
+
+func getJsonBody(fromString string, fromFile string) string {
+	if len(fromFile) > 0 {
+		fd, err := os.Open(fromFile)
+		if err != nil {
+			return ""
+		}
+		defer fd.Close()
+
+		buffer, err := io.ReadAll(fd)
+		if err != nil {
+			return ""
+		}
+
+		return string(buffer)
 	}
 
-	return io.ReadAll(resp.Body)
+	return fromString
 }
