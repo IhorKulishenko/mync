@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 )
 
 type httpConfig struct {
@@ -21,6 +22,7 @@ type httpConfig struct {
 	output          string
 	postBody        string
 	formData        map[string]string
+	headers         map[string]string
 	mpfile          string
 }
 
@@ -28,7 +30,8 @@ type argKeys struct {
 	body            string
 	bodyFile        string
 	disableRedirect bool
-	formData        formDataArg
+	formData        mKeyArg
+	headers         mKeyArg
 	outputFile      string
 	url             string
 	uploadFile      string
@@ -71,10 +74,15 @@ func HandleHttp(writer io.Writer, args []string) error {
 		formData:        keys.formData,
 		mpfile:          keys.uploadFile,
 		disableRedirect: keys.disableRedirect,
+		headers:         keys.headers,
 	}
 
 	client := getHttpClient(cfg)
-	request, err := getRequest(context.Background(), cfg)
+
+	ctx, cancelFn := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancelFn()
+
+	request, err := getRequest(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -107,7 +115,10 @@ func processResponse(writer io.Writer, cfg httpConfig, resp *http.Response) erro
 }
 
 func parseKeys(writer io.Writer, args []string) (argKeys, error) {
-	keys := argKeys{formData: make(formDataArg)}
+	keys := argKeys{
+		formData: make(mKeyArg),
+		headers:  make(mKeyArg),
+	}
 
 	fs := flag.NewFlagSet("http", flag.ContinueOnError)
 	fs.SetOutput(writer)
@@ -118,6 +129,8 @@ func parseKeys(writer io.Writer, args []string) (argKeys, error) {
 	fs.StringVar(&keys.uploadFile, "upload", "", "POST multipart form file upload")
 	fs.Var(&keys.formData, "form-data", "POST multipart form data (key=value)")
 	fs.BoolVar(&keys.disableRedirect, "disable-redirect", false, "GET disable redirect")
+	fs.Var(&keys.headers, "header", "custom header (key=value)")
+
 	fs.Usage = func() {
 		var usageString = `
 http: A HTTP client.
@@ -170,6 +183,10 @@ func getRequest(ctx context.Context, cfg httpConfig) (*http.Request, error) {
 
 	req, err := http.NewRequestWithContext(ctx, cfg.verb, cfg.url, content)
 	req.Header.Add("Content-Type", contentType)
+
+	for hName, hValue := range cfg.headers {
+		req.Header.Add(hName, hValue)
+	}
 
 	return req, err
 }

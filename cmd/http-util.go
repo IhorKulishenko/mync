@@ -5,17 +5,17 @@ import (
 	"strings"
 )
 
-type formDataArg map[string]string
+type mKeyArg map[string]string
 
-func (fd formDataArg) String() string {
+func (fd mKeyArg) String() string {
 	return fmt.Sprintf("%s", map[string]string(fd))
 }
 
-func (fd formDataArg) Len() int {
+func (fd mKeyArg) Len() int {
 	return len(fd)
 }
 
-func (fd formDataArg) Set(s string) error {
+func (fd mKeyArg) Set(s string) error {
 	if len(s) == 0 || !strings.Contains(s, "=") {
 		return ErrInvalidHttpUsage
 	}
