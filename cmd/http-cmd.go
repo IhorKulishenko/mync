@@ -122,9 +122,11 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 	var data []byte
 	var err error
 
+	client := http.Client{}
+
 	switch cfg.verb {
 	case "GET":
-		data, err = getRemoteResource(cfg.url)
+		data, err = getRemoteResource(&client, &cfg)
 		if err != nil {
 			return err
 		}
@@ -132,9 +134,9 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 		var resp []byte
 		var err error
 		if len(cfg.formData) > 0 || len(cfg.mpfile) > 0 {
-			resp, err = postMultiPartToRemoteSource(cfg.url, cfg.formData, cfg.mpfile)
+			resp, err = postMultiPartToRemoteSource(&cfg)
 		} else {
-			resp, err = postBodyToRemoteSource(cfg.url, cfg.postBody)
+			resp, err = postBodyToRemoteSource(&cfg)
 		}
 
 		if err != nil {
@@ -161,8 +163,8 @@ func processVerb(writer io.Writer, cfg httpConfig) error {
 	return nil
 }
 
-func getRemoteResource(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+func getRemoteResource(client *http.Client, cfg *httpConfig) ([]byte, error) {
+	resp, err := client.Get(cfg.url)
 	if err != nil {
 		return nil, err
 	}
@@ -172,10 +174,12 @@ func getRemoteResource(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func postBodyToRemoteSource(url string, json string) ([]byte, error) {
+func postBodyToRemoteSource(cfg *httpConfig) ([]byte, error) {
 
-	resp, err := http.Post(url, "application/json", strings.NewReader(json))
-	if err != nil {
+	resp, err := http.Post(cfg.url, "application/json",
+		strings.NewReader(cfg.postBody))
+	
+		if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -183,7 +187,7 @@ func postBodyToRemoteSource(url string, json string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func postMultiPartToRemoteSource(url string, formData map[string]string, filename string) ([]byte, error) {
+func postMultiPartToRemoteSource(cfg *httpConfig) ([]byte, error) {
 	var buffer = new(bytes.Buffer)
 
 	mwriter := multipart.NewWriter(buffer)
@@ -192,7 +196,7 @@ func postMultiPartToRemoteSource(url string, formData map[string]string, filenam
 		return []byte{}, err
 	}
 
-	for k, v := range formData {
+	for k, v := range cfg.formData {
 		fw, err := mwriter.CreateFormField(k)
 		if err != nil {
 			return errResponse(err)
@@ -200,13 +204,13 @@ func postMultiPartToRemoteSource(url string, formData map[string]string, filenam
 		fmt.Fprint(fw, v)
 	}
 
-	if len(filename) > 0 {
-		fw, err := mwriter.CreateFormFile("file", filename)
+	if len(cfg.mpfile) > 0 {
+		fw, err := mwriter.CreateFormFile("file", cfg.mpfile)
 		if err != nil {
 			return errResponse(err)
 		}
 
-		freader, err := os.Open(filename)
+		freader, err := os.Open(cfg.mpfile)
 		if err != nil {
 			return errResponse(err)
 		}
@@ -225,7 +229,7 @@ func postMultiPartToRemoteSource(url string, formData map[string]string, filenam
 
 	contentType := mwriter.FormDataContentType()
 
-	resp, err := http.Post(url, contentType, buffer)
+	resp, err := http.Post(cfg.url, contentType, buffer)
 	if err != nil {
 		return errResponse(err)
 	}
