@@ -1,8 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"strings"
+	"time"
 )
 
 type basicAuth struct {
@@ -54,6 +59,38 @@ func (fd mKeyArg) Set(s string) error {
 	value := tokens[1]
 
 	fd[key] = value
+
+	return nil
+}
+
+type LoggingClient struct {
+	log *log.Logger
+}
+
+func (c LoggingClient) RoundTrip(r *http.Request) (*http.Response, error) {
+
+	tBegin := time.Now()
+
+	resp, err := http.DefaultTransport.RoundTrip(r)
+
+	duration := time.Since(tBegin)
+
+	c.log.Printf("request took %v\n", duration)
+
+	return resp, err
+}
+
+func NewLogMiddleware(w io.Writer) http.RoundTripper {
+	transposrt := LoggingClient{}
+	transposrt.log = log.New(w, "", log.LstdFlags)
+
+	return transposrt
+}
+
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > 0 {
+		return errors.New("no redirects allowed")
+	}
 
 	return nil
 }

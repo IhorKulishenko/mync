@@ -22,6 +22,7 @@ type httpConfig struct {
 	verb            string
 	output          string
 	postBody        string
+	report          bool
 	formData        map[string]string
 	headers         map[string]string
 	mpfile          string
@@ -35,6 +36,7 @@ type argKeys struct {
 	formData        mKeyArg
 	headers         mKeyArg
 	outputFile      string
+	report          bool
 	url             string
 	uploadFile      string
 	verb            string
@@ -78,6 +80,7 @@ func HandleHttp(writer io.Writer, args []string) error {
 		disableRedirect: keys.disableRedirect,
 		headers:         keys.headers,
 		basicAuth:       keys.basicAuth,
+		report:          keys.report,
 	}
 
 	client := getHttpClient(cfg)
@@ -134,6 +137,7 @@ func parseKeys(writer io.Writer, args []string) (argKeys, error) {
 	fs.BoolVar(&keys.disableRedirect, "disable-redirect", false, "GET disable redirect")
 	fs.Var(&keys.headers, "header", "custom header (key=value)")
 	fs.Var(&keys.basicAuth, "basicauth", "to use basic auth in form user:pass")
+	fs.BoolVar(&keys.report, "report", false, "enable request duration logging")
 
 	fs.Usage = func() {
 		var usageString = `
@@ -165,18 +169,17 @@ http: <options> server`
 }
 
 func getHttpClient(cfg httpConfig) *http.Client {
-	if cfg.disableRedirect {
-		return &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) > 0 {
-					return errors.New("no redirects allowed")
-				}
+	client := http.DefaultClient
 
-				return nil
-			}}
+	if cfg.disableRedirect {
+		client.CheckRedirect = checkRedirect
 	}
 
-	return http.DefaultClient
+	if cfg.report {
+		client.Transport = NewLogMiddleware(os.Stdout)
+	}
+
+	return client
 }
 
 func getRequest(ctx context.Context, cfg httpConfig) (*http.Request, error) {
