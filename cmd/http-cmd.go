@@ -26,6 +26,8 @@ type httpConfig struct {
 	formData        map[string]string
 	headers         map[string]string
 	mpfile          string
+	maxIdleConn     int
+	numRequests     int
 }
 
 type argKeys struct {
@@ -41,6 +43,8 @@ type argKeys struct {
 	uploadFile      string
 	verb            string
 	wasSet          map[string]bool
+	maxIdleConn     int
+	numRequests     int
 }
 
 func validate(keys argKeys) error {
@@ -54,6 +58,14 @@ func validate(keys argKeys) error {
 	}
 
 	if keys.wasSet["body"] && keys.wasSet["body-file"] {
+		return ErrInvalidHttpUsage
+	}
+
+	if keys.maxIdleConn < 1 || keys.maxIdleConn > 100 {
+		return ErrInvalidHttpUsage
+	}
+
+	if keys.numRequests < 1 || keys.numRequests > 100 {
 		return ErrInvalidHttpUsage
 	}
 
@@ -81,9 +93,11 @@ func HandleHttp(writer io.Writer, args []string) error {
 		headers:         keys.headers,
 		basicAuth:       keys.basicAuth,
 		report:          keys.report,
+		maxIdleConn:     keys.maxIdleConn,
+		numRequests:     keys.numRequests,
 	}
 
-	client := getHttpClient(cfg)
+	client := getClient(cfg)
 
 	ctx, cancelFn := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancelFn()
@@ -93,12 +107,15 @@ func HandleHttp(writer io.Writer, args []string) error {
 		return err
 	}
 
-	resp, err := client.Do(request)
-	if err != nil {
-		return err
-	}
+	var resp *http.Response
+	for range cfg.numRequests {
+		resp, err = client.Do(request)
+		if err != nil {
+			continue
+		}
 
-	err = processResponse(writer, cfg, resp)
+		err = processResponse(writer, cfg, resp)
+	}
 
 	return err
 }
@@ -138,6 +155,8 @@ func parseKeys(writer io.Writer, args []string) (argKeys, error) {
 	fs.Var(&keys.headers, "header", "custom header (key=value)")
 	fs.Var(&keys.basicAuth, "basicauth", "to use basic auth in form user:pass")
 	fs.BoolVar(&keys.report, "report", false, "enable request duration logging")
+	fs.IntVar(&keys.maxIdleConn, "max-idle-conns", 1, "maximum number of idle connections")
+	fs.IntVar(&keys.numRequests, "num-requests", 1, "number or requests")
 
 	fs.Usage = func() {
 		var usageString = `
@@ -168,8 +187,10 @@ http: <options> server`
 	return keys, nil
 }
 
-func getHttpClient(cfg httpConfig) *http.Client {
-	client := http.DefaultClient
+func getClient(cfg httpConfig) *http.Client {
+	client := &http.Client{
+		Transport: getTransport(cfg),
+	}
 
 	if cfg.disableRedirect {
 		client.CheckRedirect = checkRedirect

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -93,4 +94,36 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	}
 
 	return nil
+}
+
+type clientTransport struct {
+	base   http.Transport
+	report bool
+	log    *log.Logger
+}
+
+func (t *clientTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	tBegin := time.Now()
+
+	resp, err := t.base.RoundTrip(req)
+
+	if t.report {
+		reqDuration := time.Since(tBegin)
+		t.log.Printf("request took %v\n", reqDuration)
+
+	}
+
+	return resp, err
+}
+
+func getTransport(cfg httpConfig) http.RoundTripper {
+
+	return &clientTransport{
+		report: cfg.report,
+		log:    log.New(os.Stdout, "mync:", log.LstdFlags),
+
+		base: http.Transport{
+			MaxIdleConns: cfg.maxIdleConn,
+		},
+	}
 }
